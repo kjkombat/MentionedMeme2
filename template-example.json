@@ -1,0 +1,58 @@
+{
+  "width": 800,
+  "height": 600,
+  "backgroundImage": null,
+  "backgroundColor": "#f5f5f5",
+  "regions": [
+    {
+      "id": "region1",
+      "name": "Main Face Area",
+      "path": "M 200 150 Q 250 100, 300 150 Q 350 200, 300 250 Q 250 300, 200 250 Q 150 200, 200 150 Z",
+      "defaultFill": "#e0e0e0",
+      "allowedAssets": ["asset1", "asset2", "asset3", "asset4"],
+      "fitMode": "cover"
+    },
+    {
+      "id": "region2",
+      "name": "Text Bubble",
+      "path": "M 550 150 L 575 200 L 630 210 L 590 250 L 600 305 L 550 280 L 500 305 L 510 250 L 470 210 L 525 200 Z",
+      "defaultFill": "#d0d0d0",
+      "allowedAssets": ["asset1", "asset2", "asset3"],
+      "fitMode": "cover"
+    },
+    {
+      "id": "region3",
+      "name": "Background Element",
+      "path": "M 150 400 L 300 380 L 320 450 L 280 500 L 180 490 Z",
+      "defaultFill": "#c0c0c0",
+      "allowedAssets": ["asset1", "asset2", "asset3"],
+      "fitMode": "contain"
+    }
+  ],
+  "assets": {
+    "asset1": {
+      "name": "Red Color",
+      "type": "color",
+      "data": "#FF6B6B"
+    },
+    "asset2": {
+      "name": "Gradient Blue",
+      "type": "gradient",
+      "data": {
+        "type": "linear",
+        "colors": ["#4ECDC4", "#44A08D"]
+      }
+    },
+    "asset3": {
+      "name": "Mint Color",
+      "type": "color",
+      "data": "#95E1D3"
+    },
+    "asset4": {
+      "name": "Example Image",
+      "type": "image",
+      "data": "assets/example.jpg",
+      "thumbnail": "assets/example-thumb.jpg"
+    }
+  }
+}

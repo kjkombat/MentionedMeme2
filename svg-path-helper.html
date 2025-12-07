@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Path Helper Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #canvas {
+            border: 2px solid #333;
+            background: white;
+            cursor: crosshair;
+            display: block;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover {
+            background: #da190b;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .point {
+            fill: #4CAF50;
+            stroke: #2E7D32;
+            stroke-width: 2;
+        }
+        .point.first {
+            fill: #FF5722;
+            stroke: #D84315;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .coord-display {
+            font-family: monospace;
+            background: #f5f5f5;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SVG Path Helper Tool</h1>
+
+        <div class="instructions">
+            <h3>How to Use:</h3>
+            <ol>
+                <li>Click on the canvas to add points for your shape</li>
+                <li>The tool will automatically create an SVG path</li>
+                <li>Use "Close Path" to connect the last point to the first</li>
+                <li>Use "Add Curve" to create curved segments (click two points for control)</li>
+                <li>Copy the generated path and paste it into your template</li>
+            </ol>
+        </div>
+
+        <div class="panel">
+            <div class="controls">
+                <button onclick="toggleMode()">Mode: <span id="modeText">Line</span></button>
+                <button onclick="closePath()">Close Path</button>
+                <button onclick="undoLast()">Undo Last Point</button>
+                <button onclick="clearCanvas()" class="danger">Clear All</button>
+                <button onclick="loadFromPath()">Load Path</button>
+                <span class="coord-display">Mouse: <span id="mousePos">0, 0</span></span>
+            </div>
+
+            <canvas id="canvas" width="800" height="600"></canvas>
+        </div>
+
+        <div class="panel">
+            <h3>Generated SVG Path:</h3>
+            <textarea id="pathOutput" readonly></textarea>
+            <button onclick="copyPath()">Copy to Clipboard</button>
+
+            <h3>Load Existing Path:</h3>
+            <textarea id="pathInput" placeholder="Paste an SVG path here to edit it..."></textarea>
+        </div>
+
+        <div class="panel">
+            <h3>Common Shape Templates:</h3>
+            <div class="controls">
+                <button onclick="loadTemplate('circle')">Circle</button>
+                <button onclick="loadTemplate('star')">Star</button>
+                <button onclick="loadTemplate('heart')">Heart</button>
+                <button onclick="loadTemplate('speech')">Speech Bubble</button>
+                <button onclick="loadTemplate('rectangle')">Rectangle</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let canvas, ctx;
+        let points = [];
+        let mode = 'line'; // 'line' or 'curve'
+        let curveControlPoints = [];
+        let pathClosed = false;
+
+        function init() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+
+            canvas.addEventListener('click', handleCanvasClick);
+            canvas.addEventListener('mousemove', handleMouseMove);
+
+            render();
+        }
+
+        function handleCanvasClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+
+            if (mode === 'line') {
+                points.push({ x, y, type: 'line' });
+            } else if (mode === 'curve') {
+                curveControlPoints.push({ x, y });
+                if (curveControlPoints.length === 2) {
+                    points.push({
+                        type: 'curve',
+                        control1: curveControlPoints[0],
+                        control2: curveControlPoints[1]
+                    });
+                    curveControlPoints = [];
+                }
+            }
+
+            pathClosed = false;
+            updatePath();
+            render();
+        }
+
+        function handleMouseMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+            document.getElementById('mousePos').textContent = `${x}, ${y}`;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+
+            if (points.length === 0) return;
+
+            // Draw the path
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
+
+            const path = new Path2D();
+            const firstPoint = points[0];
+            path.moveTo(firstPoint.x, firstPoint.y);
+
+            for (let i = 1; i < points.length; i++) {
+                const point = points[i];
+                if (point.type === 'line') {
+                    path.lineTo(point.x, point.y);
+                } else if (point.type === 'curve') {
+                    path.quadraticCurveTo(
+                        point.control1.x, point.control1.y,
+                        point.control2.x, point.control2.y
+                    );
+                }
+            }
+
+            if (pathClosed) {
+                path.closePath();
+                ctx.fill(path);
+            }
+
+            ctx.stroke(path);
+
+            // Draw points
+            points.forEach((point, i) => {
+                if (point.type === 'line' || i === 0) {
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = i === 0 ? '#FF5722' : '#4CAF50';
+                    ctx.fill();
+                    ctx.strokeStyle = i === 0 ? '#D84315' : '#2E7D32';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Draw point label
+                    ctx.fillStyle = '#000';
+                    ctx.font = '12px Arial';
+                    ctx.fillText(`${i}`, point.x + 8, point.y - 8);
+                }
+            });
+
+            // Draw curve control points
+            curveControlPoints.forEach((point, i) => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#FFC107';
+                ctx.fill();
+            });
+        }
+
+        function updatePath() {
+            if (points.length === 0) {
+                document.getElementById('pathOutput').value = '';
+                return;
+            }
+
+            let pathString = `M ${points[0].x} ${points[0].y}`;
+
+            for (let i = 1; i < points.length; i++) {
+                const point = points[i];
+                if (point.type === 'line') {
+                    pathString += ` L ${point.x} ${point.y}`;
+                } else if (point.type === 'curve') {
+                    pathString += ` Q ${point.control1.x} ${point.control1.y}, ${point.control2.x} ${point.control2.y}`;
+                }
+            }
+
+            if (pathClosed) {
+                pathString += ' Z';
+            }
+
+            document.getElementById('pathOutput').value = pathString;
+        }
+
+        function toggleMode() {
+            mode = mode === 'line' ? 'curve' : 'line';
+            document.getElementById('modeText').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+            curveControlPoints = [];
+        }
+
+        function closePath() {
+            pathClosed = true;
+            updatePath();
+            render();
+        }
+
+        function undoLast() {
+            if (points.length > 0) {
+                points.pop();
+            }
+            pathClosed = false;
+            updatePath();
+            render();
+        }
+
+        function clearCanvas() {
+            points = [];
+            curveControlPoints = [];
+            pathClosed = false;
+            updatePath();
+            render();
+        }
+
+        function copyPath() {
+            const pathOutput = document.getElementById('pathOutput');
+            pathOutput.select();
+            document.execCommand('copy');
+            alert('Path copied to clipboard!');
+        }
+
+        function loadFromPath() {
+            const pathInput = document.getElementById('pathInput').value.trim();
+            if (!pathInput) {
+                alert('Please paste a path in the input field first.');
+                return;
+            }
+
+            try {
+                parsePathString(pathInput);
+                updatePath();
+                render();
+            } catch (e) {
+                alert('Invalid path string: ' + e.message);
+            }
+        }
+
+        function parsePathString(pathString) {
+            points = [];
+            pathClosed = false;
+
+            const commands = pathString.match(/[MLQZ][^MLQZ]*/gi);
+            if (!commands) return;
+
+            commands.forEach(cmd => {
+                const type = cmd[0].toUpperCase();
+                const coords = cmd.slice(1).trim().split(/[\s,]+/).map(Number);
+
+                if (type === 'M') {
+                    points.push({ x: coords[0], y: coords[1], type: 'line' });
+                } else if (type === 'L') {
+                    points.push({ x: coords[0], y: coords[1], type: 'line' });
+                } else if (type === 'Q') {
+                    points.push({
+                        type: 'curve',
+                        control1: { x: coords[0], y: coords[1] },
+                        control2: { x: coords[2], y: coords[3] }
+                    });
+                } else if (type === 'Z') {
+                    pathClosed = true;
+                }
+            });
+        }
+
+        function loadTemplate(type) {
+            const templates = {
+                circle: 'M 400 200 Q 500 150, 600 200 Q 650 300, 600 400 Q 500 450, 400 400 Q 350 300, 400 200 Z',
+                star: 'M 400 150 L 420 250 L 520 260 L 440 320 L 460 420 L 400 370 L 340 420 L 360 320 L 280 260 L 380 250 Z',
+                heart: 'M 400 450 Q 300 350, 300 250 Q 300 150, 400 200 Q 500 150, 500 250 Q 500 350, 400 450 Z',
+                speech: 'M 200 200 L 600 200 L 600 400 L 450 400 L 400 450 L 380 400 L 200 400 Z',
+                rectangle: 'M 200 200 L 600 200 L 600 400 L 200 400 Z'
+            };
+
+            document.getElementById('pathInput').value = templates[type];
+            loadFromPath();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

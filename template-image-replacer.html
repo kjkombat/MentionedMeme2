@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Path Template Image Replacer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        #canvas {
+            border: 2px solid #333;
+            background: white;
+            cursor: pointer;
+            display: block;
+            margin: 20px 0;
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .region-selector {
+            margin: 10px 0;
+        }
+        .asset-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .asset-item {
+            border: 2px solid #ddd;
+            padding: 5px;
+            cursor: pointer;
+            text-align: center;
+            border-radius: 4px;
+        }
+        .asset-item:hover {
+            border-color: #4CAF50;
+        }
+        .asset-item.selected {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SVG Path Template Image Replacer</h1>
+
+        <div class="controls">
+            <h3>Select Region and Asset</h3>
+            <div class="region-selector">
+                <label>Region: </label>
+                <select id="regionSelect"></select>
+            </div>
+            <div id="assetGrid" class="asset-grid"></div>
+            <div>
+                <button onclick="exportImage()">Export Final Image</button>
+                <button onclick="resetTemplate()">Reset Template</button>
+            </div>
+        </div>
+
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        // TEMPLATE DEFINITION
+        const template = {
+            width: 800,
+            height: 600,
+            backgroundImage: null, // Optional: path to background image
+            backgroundColor: '#f5f5f5',
+            regions: [
+                {
+                    id: 'shape1',
+                    name: 'Circle Area',
+                    // SVG path for a circle-like shape
+                    path: 'M 200 150 Q 250 100, 300 150 Q 350 200, 300 250 Q 250 300, 200 250 Q 150 200, 200 150 Z',
+                    defaultFill: '#e0e0e0',
+                    allowedAssets: ['asset1', 'asset2', 'asset3'],
+                    fitMode: 'cover' // 'cover', 'contain', or 'stretch'
+                },
+                {
+                    id: 'shape2',
+                    name: 'Star Shape',
+                    // SVG path for a star
+                    path: 'M 550 150 L 575 200 L 630 210 L 590 250 L 600 305 L 550 280 L 500 305 L 510 250 L 470 210 L 525 200 Z',
+                    defaultFill: '#d0d0d0',
+                    allowedAssets: ['asset1', 'asset2', 'asset3'],
+                    fitMode: 'cover'
+                },
+                {
+                    id: 'shape3',
+                    name: 'Custom Polygon',
+                    // SVG path for an irregular polygon
+                    path: 'M 150 400 L 300 380 L 320 450 L 280 500 L 180 490 Z',
+                    defaultFill: '#c0c0c0',
+                    allowedAssets: ['asset1', 'asset2', 'asset3'],
+                    fitMode: 'contain'
+                }
+            ]
+        };
+
+        // ASSET LIBRARY
+        const assetLibrary = {
+            asset1: {
+                name: 'Pattern 1',
+                type: 'color',
+                data: '#FF6B6B'
+            },
+            asset2: {
+                name: 'Pattern 2',
+                type: 'gradient',
+                data: {
+                    type: 'linear',
+                    colors: ['#4ECDC4', '#44A08D']
+                }
+            },
+            asset3: {
+                name: 'Pattern 3',
+                type: 'color',
+                data: '#95E1D3'
+            }
+            // You can add image assets like this:
+            // asset4: {
+            //     name: 'Image 1',
+            //     type: 'image',
+            //     data: 'path/to/image.jpg'
+            // }
+        };
+
+        // STATE
+        let canvas, ctx;
+        let currentRegionSelections = {};
+        let loadedImages = {};
+        let selectedRegion = null;
+
+        // INITIALIZATION
+        function init() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            canvas.width = template.width;
+            canvas.height = template.height;
+
+            // Initialize default selections
+            template.regions.forEach(region => {
+                currentRegionSelections[region.id] = null;
+            });
+
+            // Setup UI
+            populateRegionSelector();
+            setupCanvasClick();
+
+            // Initial render
+            render();
+        }
+
+        // RENDERING
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background
+            ctx.fillStyle = template.backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw each region
+            template.regions.forEach(region => {
+                const selectedAsset = currentRegionSelections[region.id];
+
+                if (selectedAsset) {
+                    drawAssetInRegion(region, selectedAsset);
+                } else {
+                    drawDefaultRegion(region);
+                }
+
+                // Draw outline
+                drawRegionOutline(region);
+            });
+        }
+
+        function drawDefaultRegion(region) {
+            const path = new Path2D(region.path);
+            ctx.fillStyle = region.defaultFill;
+            ctx.fill(path);
+        }
+
+        function drawAssetInRegion(region, assetId) {
+            const asset = assetLibrary[assetId];
+            const path = new Path2D(region.path);
+
+            // Save context
+            ctx.save();
+
+            // Clip to region path
+            ctx.clip(path);
+
+            if (asset.type === 'color') {
+                ctx.fillStyle = asset.data;
+                ctx.fill(path);
+            } else if (asset.type === 'gradient') {
+                const bounds = getPathBounds(region.path);
+                const gradient = ctx.createLinearGradient(
+                    bounds.minX, bounds.minY,
+                    bounds.maxX, bounds.maxY
+                );
+                asset.data.colors.forEach((color, i) => {
+                    gradient.addColorStop(i / (asset.data.colors.length - 1), color);
+                });
+                ctx.fillStyle = gradient;
+                ctx.fill(path);
+            } else if (asset.type === 'image' && loadedImages[assetId]) {
+                const img = loadedImages[assetId];
+                const bounds = getPathBounds(region.path);
+
+                // Draw image based on fitMode
+                if (region.fitMode === 'cover') {
+                    drawImageCover(ctx, img, bounds);
+                } else if (region.fitMode === 'contain') {
+                    drawImageContain(ctx, img, bounds);
+                } else {
+                    ctx.drawImage(img, bounds.minX, bounds.minY,
+                                bounds.maxX - bounds.minX,
+                                bounds.maxY - bounds.minY);
+                }
+            }
+
+            // Restore context
+            ctx.restore();
+        }
+
+        function drawRegionOutline(region) {
+            const path = new Path2D(region.path);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke(path);
+            ctx.setLineDash([]);
+        }
+
+        // HELPER FUNCTIONS
+        function getPathBounds(pathString) {
+            const path = new Path2D(pathString);
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // Parse path to get bounds
+            const coords = pathString.match(/[\d.]+/g).map(Number);
+            const xCoords = coords.filter((_, i) => i % 2 === 0);
+            const yCoords = coords.filter((_, i) => i % 2 === 1);
+
+            return {
+                minX: Math.min(...xCoords),
+                maxX: Math.max(...xCoords),
+                minY: Math.min(...yCoords),
+                maxY: Math.max(...yCoords)
+            };
+        }
+
+        function drawImageCover(ctx, img, bounds) {
+            const imgAspect = img.width / img.height;
+            const boundsAspect = (bounds.maxX - bounds.minX) / (bounds.maxY - bounds.minY);
+
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (imgAspect > boundsAspect) {
+                drawHeight = bounds.maxY - bounds.minY;
+                drawWidth = drawHeight * imgAspect;
+                offsetX = bounds.minX - (drawWidth - (bounds.maxX - bounds.minX)) / 2;
+                offsetY = bounds.minY;
+            } else {
+                drawWidth = bounds.maxX - bounds.minX;
+                drawHeight = drawWidth / imgAspect;
+                offsetX = bounds.minX;
+                offsetY = bounds.minY - (drawHeight - (bounds.maxY - bounds.minY)) / 2;
+            }
+
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        }
+
+        function drawImageContain(ctx, img, bounds) {
+            const imgAspect = img.width / img.height;
+            const boundsAspect = (bounds.maxX - bounds.minX) / (bounds.maxY - bounds.minY);
+
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (imgAspect > boundsAspect) {
+                drawWidth = bounds.maxX - bounds.minX;
+                drawHeight = drawWidth / imgAspect;
+                offsetX = bounds.minX;
+                offsetY = bounds.minY + (bounds.maxY - bounds.minY - drawHeight) / 2;
+            } else {
+                drawHeight = bounds.maxY - bounds.minY;
+                drawWidth = drawHeight * imgAspect;
+                offsetX = bounds.minX + (bounds.maxX - bounds.minX - drawWidth) / 2;
+                offsetY = bounds.minY;
+            }
+
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        }
+
+        // UI FUNCTIONS
+        function populateRegionSelector() {
+            const select = document.getElementById('regionSelect');
+            template.regions.forEach(region => {
+                const option = document.createElement('option');
+                option.value = region.id;
+                option.textContent = region.name;
+                select.appendChild(option);
+            });
+
+            select.addEventListener('change', (e) => {
+                selectedRegion = e.target.value;
+                updateAssetGrid();
+            });
+
+            selectedRegion = template.regions[0].id;
+            updateAssetGrid();
+        }
+
+        function updateAssetGrid() {
+            const grid = document.getElementById('assetGrid');
+            grid.innerHTML = '';
+
+            const region = template.regions.find(r => r.id === selectedRegion);
+            if (!region) return;
+
+            region.allowedAssets.forEach(assetId => {
+                const asset = assetLibrary[assetId];
+                const div = document.createElement('div');
+                div.className = 'asset-item';
+                if (currentRegionSelections[selectedRegion] === assetId) {
+                    div.classList.add('selected');
+                }
+
+                div.innerHTML = `<strong>${asset.name}</strong>`;
+
+                // Add preview
+                if (asset.type === 'color') {
+                    div.style.background = asset.data;
+                }
+
+                div.onclick = () => selectAsset(assetId);
+                grid.appendChild(div);
+            });
+        }
+
+        function selectAsset(assetId) {
+            if (!selectedRegion) return;
+
+            currentRegionSelections[selectedRegion] = assetId;
+            updateAssetGrid();
+            render();
+        }
+
+        function setupCanvasClick() {
+            canvas.addEventListener('click', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                // Check which region was clicked
+                template.regions.forEach(region => {
+                    const path = new Path2D(region.path);
+                    if (ctx.isPointInPath(path, x, y)) {
+                        selectedRegion = region.id;
+                        document.getElementById('regionSelect').value = region.id;
+                        updateAssetGrid();
+                    }
+                });
+            });
+        }
+
+        // EXPORT FUNCTIONS
+        function exportImage() {
+            const link = document.createElement('a');
+            link.download = 'template-output.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        function resetTemplate() {
+            template.regions.forEach(region => {
+                currentRegionSelections[region.id] = null;
+            });
+            render();
+            updateAssetGrid();
+        }
+
+        // PRELOAD IMAGES (if you add image assets)
+        function preloadImages() {
+            const imageAssets = Object.entries(assetLibrary)
+                .filter(([_, asset]) => asset.type === 'image');
+
+            let loaded = 0;
+            imageAssets.forEach(([id, asset]) => {
+                const img = new Image();
+                img.onload = () => {
+                    loadedImages[id] = img;
+                    loaded++;
+                    if (loaded === imageAssets.length) {
+                        render();
+                    }
+                };
+                img.src = asset.data;
+            });
+        }
+
+        // Start the application
+        window.onload = () => {
+            init();
+            preloadImages();
+        };
+    </script>
+</body>
+</html>
